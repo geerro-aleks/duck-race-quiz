@@ -7,29 +7,30 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     :root {
-      --race-navy: #0f172a;
-      --panel-navy: #1e293b;
-      --panel-border: #334155;
-      --water-blue: #00b8d4;
-      --button-blue: #28677f;
-      --button-hover: #347f97;
-      --sun-yellow: #fff000;
-      --orange: #f05a24;
+      --paper: #f2efe8;
+      --panel-paper: #fbf9f4;
+      --panel-border: #d3cfc5;
+      --royal-blue: #1738e8;
+      --royal-blue-hover: #102bb9;
+      --ink: #171717;
+      --sun-yellow: #f7cb35;
     }
-    body { background: var(--race-navy); }
-    .race-panel { background: var(--panel-navy); border-color: var(--panel-border); }
-    .race-title { color: var(--sun-yellow); -webkit-text-stroke: 1px var(--orange); text-shadow: 2px 2px 0 #722d18; }
-    .race-question { color: var(--sun-yellow); }
-    canvas { background: var(--water-blue); border-radius: 12px; }
-    canvas.race-track { border-color: #087e9b; }
-    .race-choice { background: var(--button-blue); border-color: #66a5b7; }
-    .race-choice:hover:not(:disabled) { background: var(--button-hover); }
+    body { background: var(--paper); color: var(--ink); }
+    .race-panel { background: var(--panel-paper); border-color: var(--panel-border); }
+    .race-title { color: var(--royal-blue); }
+    .race-question { color: var(--royal-blue); }
+    canvas { background: var(--paper); border-radius: 12px; }
+    canvas.race-track { border-color: var(--royal-blue); }
+    .race-choice { background: var(--royal-blue); border-color: var(--royal-blue); color: #fff; }
+    .race-choice:hover:not(:disabled) { background: var(--royal-blue-hover); }
     .race-choice:focus-visible { outline: 3px solid var(--sun-yellow); outline-offset: 2px; }
-    .race-choice.correct { background: #167c34; border-color: var(--sun-yellow); }
+    .race-choice.correct { background: var(--sun-yellow); border-color: var(--royal-blue); color: var(--ink); }
     .race-choice:disabled { cursor: default; opacity: .82; }
+    input { background: #fffefa; border: 1px solid var(--panel-border); }
+    #entry-error { color: var(--royal-blue); }
   </style>
 </head>
-<body class="text-white min-h-screen flex flex-col items-center justify-center p-4">
+<body class="min-h-screen flex flex-col items-center justify-center p-4">
   <main class="max-w-2xl w-full space-y-4">
     <header class="race-panel p-4 rounded-xl border flex justify-between items-center">
       <h1 class="race-title text-xl font-bold">🦆 Duck Race Quiz</h1>
@@ -53,7 +54,7 @@
           <button class="race-choice w-full p-3 rounded-lg border font-bold">Join game</button>
         </form>
       </div>
-      <p id="entry-error" class="text-sm text-yellow-100" role="alert"></p>
+      <p id="entry-error" class="text-sm" role="alert"></p>
     </section>
 
     <section id="game" class="hidden space-y-4 text-center">
@@ -90,7 +91,7 @@
   </main>
 
   <script>
-    const duckColors = ["#ff595e", "#ffca3a", "#8ac926", "#f472b6"];
+    const duckColors = ["#1738e8", "#f7cb35", "#222222", "#7890f5"];
     const entry = document.getElementById("entry");
     const gamePanel = document.getElementById("game");
     const canvas = document.getElementById("raceTrack");
@@ -184,7 +185,7 @@
 
     function renderTrack() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.fillStyle = "#ffffff";
+      ctx.fillStyle = "#171717";
       for (let y = 0; y < canvas.height; y += 20) {
         ctx.fillRect(540, y, 10, 10);
         ctx.fillRect(550, y + 10, 10, 10);
@@ -194,7 +195,7 @@
       const progress = isRacing ? Math.min(1, Math.max(0, (Date.now() - state.raceStartedAt) / duration)) : 0;
       for (let lane = 0; lane < 4; lane += 1) {
         const y = 40 + lane * 55;
-        ctx.strokeStyle = "rgba(255,255,255,0.25)";
+        ctx.strokeStyle = "rgba(23,56,232,0.28)";
         ctx.lineWidth = 2;
         ctx.beginPath();
         ctx.moveTo(0, y + 20);
