@@ -2,7 +2,7 @@
   "functions": {
     "api/[...path].mjs": {
       "maxDuration": 10,
-      "includeFiles": ["index.html", "assets/**"]
+      "includeFiles": "{index.html,assets/**}"
     }
   }
 }
