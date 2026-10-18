@@ -1,1 +1,1 @@
-export { default } from "../../app.mjs";
+module.exports = require("../handler.cjs");
