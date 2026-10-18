@@ -1,6 +1,12 @@
 {
   "functions": {
-    "api/*.js": {
+    "api/host/session.js": {
+      "maxDuration": 10
+    },
+    "api/state.js": {
+      "maxDuration": 10
+    },
+    "api/game.js": {
       "maxDuration": 10
     }
   }

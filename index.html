@@ -117,12 +117,19 @@
     }
 
     async function post(path, payload) {
+      let requestPath = path;
+      let requestPayload = payload;
+      const gameAction = path.match(/^\/api\/games\/(\d{6})\/(join|start|reset|answer)$/);
+      if (gameAction) {
+        requestPath = "/api/game";
+        requestPayload = { ...payload, pin: gameAction[1], action: gameAction[2] };
+      }
       let response;
       try {
-        response = await fetch(path, {
+        response = await fetch(requestPath, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload)
+          body: JSON.stringify(requestPayload)
         });
       } catch {
         throw new Error("Cannot reach the game server. Start the server or check the public game URL, then try again.");

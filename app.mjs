@@ -198,7 +198,8 @@ async function publicState(sql, game, role, token) {
 
 async function route(request) {
   const url = new URL(request.url);
-  const parts = url.pathname.split("/").filter(Boolean);
+  let parts = url.pathname.split("/").filter(Boolean);
+  let body = null;
   const sql = getDatabase();
 
   if (request.method === "GET" && url.pathname === "/health") {
@@ -209,8 +210,8 @@ async function route(request) {
   if (request.method === "POST" && url.pathname === "/api/host/session") {
     const hostKey = process.env.HOST_KEY;
     if (!hostKey) return fail("HOST_KEY is not configured on the server.", 503);
-    const body = await readJson(request);
-    if (typeof body.hostKey !== "string" || !safeEqual(body.hostKey, hostKey)) {
+    const hostBody = await readJson(request);
+    if (typeof hostBody.hostKey !== "string" || !safeEqual(hostBody.hostKey, hostKey)) {
       return fail("The host key is incorrect.", 403);
     }
     const game = await ensureGame(sql);
@@ -241,13 +242,23 @@ async function route(request) {
     return json(await publicState(sql, updatedGame, role, token));
   }
 
+  if (request.method === "POST" && url.pathname === "/api/game") {
+    body = await readJson(request);
+    parts = [
+      "api",
+      "games",
+      typeof body.pin === "string" ? body.pin : "",
+      typeof body.action === "string" ? body.action : ""
+    ];
+  }
+
   if (parts[0] !== "api" || parts[1] !== "games" || !parts[2] || parts[2].length !== 6) {
     return fail("API endpoint not found.", 404);
   }
   const pin = parts[2];
   const game = await getGame(sql, pin);
   if (!game) return fail("Game not found. Check the PIN and make sure the quiz is hosted.", 404);
-  const body = request.method === "POST" ? await readJson(request) : {};
+  if (body === null) body = request.method === "POST" ? await readJson(request) : {};
   await advanceGame(sql, pin);
   const [currentGame] = await sql`SELECT * FROM quiz_games WHERE id = 'main' AND pin = ${pin}`;
 

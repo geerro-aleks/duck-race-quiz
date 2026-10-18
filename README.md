@@ -18,7 +18,7 @@ Neon currently lists a $0 Free plan with usage/storage limits and says no credit
    - `DATABASE_URL`: the Neon connection string.
    - `HOST_KEY`: a long, random private secret. Generate one with `node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"`.
    - `GAME_PIN` (optional): a chosen six-digit PIN. If omitted, the first host session creates a random persistent PIN in the database.
-4. Deploy. Vercel serves the static page and the API function under `api/`.
+4. Deploy. Vercel serves the static page and the API functions under `api/` (`host/session.js`, `state.js`, and `game.js`).
 5. Open the Vercel URL, enter `HOST_KEY` under **Host the preset quiz**, and share the displayed PIN and URL with players. Players can join from Wi-Fi or mobile data.
 
 Do not put `HOST_KEY` or `DATABASE_URL` in source code or in browser JavaScript. They are read only by the server. The host key is intentionally an environment secret rather than a hardcoded value: hardcoding it would expose host controls to anyone who can read the repository.
