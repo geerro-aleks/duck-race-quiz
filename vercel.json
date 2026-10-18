@@ -1,6 +1,6 @@
 {
   "functions": {
-    "api/[...path].mjs": {
+    "api/*.mjs": {
       "maxDuration": 10,
       "includeFiles": "{index.html,assets/**}"
     }
