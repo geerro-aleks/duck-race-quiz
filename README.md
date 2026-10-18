@@ -31,7 +31,7 @@ After setting up the Neon schema, copy `.env.example` to `.env` and enter your o
 
 ## Game flow and limits
 
-The host starts the fixed quiz. Players have 30 seconds to answer, followed by a six-second race, correct-answer reveal, and 45-second break. Correct answers earn 100 points. The server checks deadlines and scores; the answer key is not sent until the reveal.
+The host starts the fixed quiz. Players have 30 seconds to answer, followed by a six-second race, correct-answer reveal, and 25-second break. Correct answers earn 100 points. The server checks deadlines and scores; the answer key is not sent until the reveal.
 
 Clients request updates every three seconds because Vercel Functions do not provide this app with a shared always-on process for pushing live state to all players. This produces many requests in a large room: 500 players for a full quiz could make roughly 130,000 state requests, in addition to answer and join requests. Free Vercel/Neon usage is limited, so this is **not yet load-tested or guaranteed for hundreds of simultaneous players**. Test with a small group first and check both providers' current limits. If usage requires a paid plan, stop before upgrading if you do not want charges.
 

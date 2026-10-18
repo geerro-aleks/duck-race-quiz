@@ -1,6 +1,6 @@
 export const ANSWER_SECONDS = 30;
 export const RACE_SECONDS = 6;
-export const REVEAL_SECONDS = 45;
+export const REVEAL_SECONDS = 25;
 export const MAX_PLAYERS = 500;
 
 export const quiz = [
