@@ -6,6 +6,7 @@ import { neon } from "@neondatabase/serverless";
 import { ANSWER_SECONDS, MAX_PLAYERS, RACE_SECONDS, REVEAL_SECONDS, quiz } from "./quiz.mjs";
 
 const root = path.dirname(fileURLToPath(import.meta.url));
+const MAX_QUESTIONS = 50;
 let database;
 
 function getDatabase() {
@@ -74,7 +75,43 @@ async function getGame(sql, pin) {
   return game || null;
 }
 
-async function advanceGame(sql, pin) {
+function getQuestions(game) {
+  if (!game.questions) return quiz;
+  const questions = typeof game.questions === "string" ? JSON.parse(game.questions) : game.questions;
+  if (!Array.isArray(questions) || questions.length === 0) {
+    throw new Error("The saved quiz questions are invalid.");
+  }
+  return questions;
+}
+
+function validateQuestions(value) {
+  if (!Array.isArray(value) || value.length < 1 || value.length > MAX_QUESTIONS) {
+    return { error: `Add between 1 and ${MAX_QUESTIONS} questions.` };
+  }
+
+  const questions = [];
+  for (const [index, item] of value.entries()) {
+    if (!item || typeof item.q !== "string" || !Array.isArray(item.choices)
+      || item.choices.length !== 4 || !Number.isInteger(item.correct)
+      || item.correct < 0 || item.correct > 3) {
+      return { error: `Question ${index + 1} must have a prompt, four choices, and one correct choice.` };
+    }
+
+    const q = item.q.trim();
+    const choices = item.choices.map(choice => typeof choice === "string" ? choice.trim() : "");
+    if (!q || q.length > 300) {
+      return { error: `Question ${index + 1} must have a prompt of 1 to 300 characters.` };
+    }
+    if (choices.some(choice => !choice || choice.length > 120)) {
+      return { error: `Each choice in question ${index + 1} must have 1 to 120 characters.` };
+    }
+    questions.push({ q, choices, correct: item.correct });
+  }
+
+  return { questions };
+}
+
+async function advanceGame(sql, pin, questions) {
   const now = Date.now();
 
   await sql`
@@ -92,7 +129,7 @@ async function advanceGame(sql, pin) {
     WHERE id = 'main' AND pin = ${pin}
       AND phase = 'race' AND race_ends_at <= ${now}::bigint
   `;
-  const correctIndex = expiredRace ? quiz[Number(expiredRace.question_index)].correct : null;
+  const correctIndex = expiredRace ? questions[Number(expiredRace.question_index)].correct : null;
   await sql`
     WITH transitioned AS (
       UPDATE quiz_games
@@ -116,16 +153,16 @@ async function advanceGame(sql, pin) {
     WITH transitioned AS (
       UPDATE quiz_games
       SET phase = CASE
-            WHEN question_index + 1 >= ${quiz.length} THEN 'finished'
+            WHEN question_index + 1 >= ${questions.length} THEN 'finished'
             ELSE 'question'
           END,
           question_index = CASE
-            WHEN question_index + 1 >= ${quiz.length} THEN question_index
+            WHEN question_index + 1 >= ${questions.length} THEN question_index
             ELSE question_index + 1
           END,
           correct_index = NULL,
           deadline = CASE
-            WHEN question_index + 1 >= ${quiz.length} THEN NULL
+            WHEN question_index + 1 >= ${questions.length} THEN NULL
             ELSE ${nextQuestionDeadline}::bigint
           END,
           race_started_at = NULL,
@@ -142,9 +179,9 @@ async function advanceGame(sql, pin) {
   `;
 }
 
-async function publicState(sql, game, role, token) {
+async function publicState(sql, game, role, token, questions) {
   const ownHash = role === "player" ? hashToken(token) : null;
-  const current = game.question_index >= 0 ? quiz[game.question_index] : null;
+  const current = game.question_index >= 0 ? questions[game.question_index] : null;
   let players = [];
   let ownPlayer = null;
   let playerCount = 0;
@@ -182,7 +219,7 @@ async function publicState(sql, game, role, token) {
     pin: game.pin,
     phase: game.phase,
     questionNumber: Number(game.question_index) + 1,
-    questionTotal: quiz.length,
+    questionTotal: questions.length,
     players: players.map(({ id, name, score }) => ({ id, name, score })),
     playerCount,
     question: current ? { q: current.q, choices: current.choices } : null,
@@ -194,6 +231,7 @@ async function publicState(sql, game, role, token) {
     correctIndex: game.phase === "reveal" || game.phase === "finished" ? game.correct_index : null,
     answered: Boolean(ownPlayer?.answer_index !== null && ownPlayer?.answer_index !== undefined),
     answerCount,
+    ...(role === "host" && game.phase === "lobby" ? { hostQuestions: questions } : {}),
     ...(role === "host" ? { role: "host" } : ownPlayer ? { role: "player", playerId: ownPlayer.id } : {})
   };
 }
@@ -239,9 +277,9 @@ async function route(request) {
     } else {
       return fail("Invalid session role.", 400);
     }
-    await advanceGame(sql, pin);
+    await advanceGame(sql, pin, getQuestions(game));
     const [updatedGame] = await sql`SELECT * FROM quiz_games WHERE id = 'main' AND pin = ${pin}`;
-    return json(await publicState(sql, updatedGame, role, token));
+    return json(await publicState(sql, updatedGame, role, token, getQuestions(updatedGame)));
   }
 
   if (request.method === "POST" && url.pathname === "/api/game") {
@@ -261,8 +299,28 @@ async function route(request) {
   const game = await getGame(sql, pin);
   if (!game) return fail("Game not found. Check the PIN and make sure the quiz is hosted.", 404);
   if (body === null) body = request.method === "POST" ? await readJson(request) : {};
-  await advanceGame(sql, pin);
+  const questions = getQuestions(game);
+  await advanceGame(sql, pin, questions);
   const [currentGame] = await sql`SELECT * FROM quiz_games WHERE id = 'main' AND pin = ${pin}`;
+
+  if (request.method === "POST" && parts[3] === "questions") {
+    if (!process.env.HOST_KEY || !safeEqual(body.hostToken || "", createHostToken(process.env.HOST_KEY, pin))) {
+      return fail("Only the host can edit quiz questions.", 403);
+    }
+    if (currentGame.phase !== "lobby") {
+      return fail("Questions can only be changed while the quiz is in the lobby.", 409);
+    }
+    const validation = validateQuestions(body.questions);
+    if (validation.error) return fail(validation.error, 400);
+    const [saved] = await sql`
+      UPDATE quiz_games
+      SET questions = ${JSON.stringify(validation.questions)}::jsonb
+      WHERE id = 'main' AND pin = ${pin} AND phase = 'lobby'
+      RETURNING pin
+    `;
+    if (!saved) return fail("The quiz started before the question changes were saved.", 409);
+    return json({ ok: true, questionCount: validation.questions.length });
+  }
 
   if (request.method === "POST" && parts[3] === "join") {
     const name = typeof body.name === "string" ? body.name.trim() : "";

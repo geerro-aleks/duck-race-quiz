@@ -6,8 +6,11 @@ CREATE TABLE IF NOT EXISTS quiz_games (
   deadline BIGINT,
   race_started_at BIGINT,
   race_ends_at BIGINT,
-  correct_index INTEGER
+  correct_index INTEGER,
+  questions JSONB
 );
+
+ALTER TABLE quiz_games ADD COLUMN IF NOT EXISTS questions JSONB;
 
 CREATE TABLE IF NOT EXISTS quiz_players (
   id UUID PRIMARY KEY,

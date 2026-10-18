@@ -75,6 +75,18 @@
         <div id="choices-grid" class="grid grid-cols-2 gap-3"></div>
         <p id="status-text" class="text-sm" aria-live="polite"></p>
         <div id="host-controls" class="hidden space-y-3">
+          <section id="question-manager" class="space-y-3 text-left">
+            <div>
+              <h3 class="font-bold">Manage questions</h3>
+              <p class="text-sm">Add, edit, or remove questions here. Changes are saved for future games and can only be made in the lobby.</p>
+            </div>
+            <div id="question-editor" class="space-y-3"></div>
+            <div class="flex flex-col sm:flex-row gap-2">
+              <button id="add-question-button" type="button" class="race-choice p-3 rounded-lg border font-bold">Add question</button>
+              <button id="save-questions-button" type="button" class="race-choice p-3 rounded-lg border font-bold">Save question changes</button>
+            </div>
+            <p id="question-save-status" class="text-sm" role="status" aria-live="polite"></p>
+          </section>
           <div>
             <h3 class="font-bold">Players</h3>
             <ul id="players-list" class="text-sm"></ul>
@@ -104,6 +116,8 @@
     let polling = false;
     let submitted = false;
     let lastPhase = null;
+    let questionDrafts = [];
+    let questionBaseline = null;
 
     raceCharacter.onload = () => {
       if (state) renderTrack();
@@ -120,7 +134,7 @@
     async function post(path, payload) {
       let requestPath = path;
       let requestPayload = payload;
-      const gameAction = path.match(/^\/api\/games\/(\d{6})\/(join|start|reset|answer)$/);
+      const gameAction = path.match(/^\/api\/games\/(\d{6})\/(join|start|reset|answer|questions)$/);
       if (gameAction) {
         requestPath = "/api/game";
         requestPayload = { ...payload, pin: gameAction[1], action: gameAction[2] };
@@ -240,6 +254,11 @@
         : `Players: ${state.playerCount}`;
       document.getElementById("host-controls").classList.toggle("hidden",
         session.role !== "host" || (state.phase !== "lobby" && state.phase !== "finished"));
+      document.getElementById("question-manager").classList.toggle("hidden",
+        session.role !== "host" || state.phase !== "lobby");
+      if (session.role === "host" && state.phase === "lobby" && Array.isArray(state.hostQuestions)) {
+        syncQuestionDrafts(state.hostQuestions);
+      }
       document.getElementById("start-button").disabled = state.players.length === 0;
       document.getElementById("start-button").classList.toggle("hidden", state.phase !== "lobby");
       document.getElementById("reset-button").classList.toggle("hidden", state.phase !== "finished");
@@ -264,6 +283,102 @@
         item.textContent = player.name;
         playersList.appendChild(item);
       }
+    }
+
+    function syncQuestionDrafts(serverQuestions) {
+      const serverSnapshot = JSON.stringify(serverQuestions);
+      const hasUnsavedChanges = questionBaseline !== null
+        && JSON.stringify(questionDrafts) !== questionBaseline;
+      if (questionBaseline === null || (!hasUnsavedChanges && serverSnapshot !== questionBaseline)) {
+        questionDrafts = serverQuestions.map(question => ({
+          q: question.q,
+          choices: [...question.choices],
+          correct: question.correct
+        }));
+        questionBaseline = serverSnapshot;
+        renderQuestionEditor();
+      }
+    }
+
+    function updateQuestionSaveButton() {
+      document.getElementById("save-questions-button").disabled =
+        questionBaseline !== null && JSON.stringify(questionDrafts) === questionBaseline;
+    }
+
+    function renderQuestionEditor() {
+      const editor = document.getElementById("question-editor");
+      editor.replaceChildren();
+      questionDrafts.forEach((question, questionIndex) => {
+        const card = document.createElement("article");
+        card.className = "race-panel border rounded-lg p-3 space-y-2";
+
+        const promptLabel = document.createElement("label");
+        promptLabel.className = "block text-sm font-bold";
+        promptLabel.textContent = `Question ${questionIndex + 1}`;
+        const prompt = document.createElement("textarea");
+        prompt.className = "w-full p-2 rounded-lg text-slate-900";
+        prompt.rows = 2;
+        prompt.maxLength = 300;
+        prompt.value = question.q;
+        prompt.setAttribute("aria-label", `Question ${questionIndex + 1}`);
+        prompt.addEventListener("input", () => {
+          question.q = prompt.value;
+          updateQuestionSaveButton();
+        });
+        promptLabel.appendChild(prompt);
+        card.appendChild(promptLabel);
+
+        question.choices.forEach((choice, choiceIndex) => {
+          const choiceLabel = document.createElement("label");
+          choiceLabel.className = "block text-sm";
+          choiceLabel.textContent = `Choice ${choiceIndex + 1}`;
+          const choiceInput = document.createElement("input");
+          choiceInput.className = "w-full p-2 rounded-lg text-slate-900";
+          choiceInput.type = "text";
+          choiceInput.maxLength = 120;
+          choiceInput.value = choice;
+          choiceInput.setAttribute("aria-label", `Question ${questionIndex + 1}, choice ${choiceIndex + 1}`);
+          choiceInput.addEventListener("input", () => {
+            question.choices[choiceIndex] = choiceInput.value;
+            updateQuestionSaveButton();
+          });
+          choiceLabel.appendChild(choiceInput);
+          card.appendChild(choiceLabel);
+        });
+
+        const correctLabel = document.createElement("label");
+        correctLabel.className = "block text-sm font-bold";
+        correctLabel.textContent = "Correct choice";
+        const correctSelect = document.createElement("select");
+        correctSelect.className = "w-full p-2 rounded-lg text-slate-900";
+        correctSelect.setAttribute("aria-label", `Correct choice for question ${questionIndex + 1}`);
+        question.choices.forEach((_, choiceIndex) => {
+          const option = document.createElement("option");
+          option.value = String(choiceIndex);
+          option.textContent = `Choice ${choiceIndex + 1}`;
+          correctSelect.appendChild(option);
+        });
+        correctSelect.value = String(question.correct);
+        correctSelect.addEventListener("change", () => {
+          question.correct = Number(correctSelect.value);
+          updateQuestionSaveButton();
+        });
+        correctLabel.appendChild(correctSelect);
+        card.appendChild(correctLabel);
+
+        const removeButton = document.createElement("button");
+        removeButton.type = "button";
+        removeButton.className = "race-choice p-2 rounded-lg border font-bold";
+        removeButton.textContent = "Remove question";
+        removeButton.addEventListener("click", () => {
+          questionDrafts.splice(questionIndex, 1);
+          renderQuestionEditor();
+        });
+        card.appendChild(removeButton);
+        editor.appendChild(card);
+      });
+      document.getElementById("add-question-button").disabled = questionDrafts.length >= 50;
+      updateQuestionSaveButton();
     }
 
     function renderRound(roundChanged) {
@@ -395,6 +510,42 @@
       } catch (error) {
         document.getElementById("status-text").textContent = error.message;
         button.disabled = false;
+      }
+    });
+
+    document.getElementById("add-question-button").addEventListener("click", () => {
+      questionDrafts.push({
+        q: "",
+        choices: ["", "", "", ""],
+        correct: 0
+      });
+      renderQuestionEditor();
+      document.getElementById("question-editor").lastElementChild?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    });
+
+    document.getElementById("save-questions-button").addEventListener("click", async event => {
+      const button = event.currentTarget;
+      const status = document.getElementById("question-save-status");
+      button.disabled = true;
+      status.textContent = "Saving questions…";
+      try {
+        await post("/api/game", {
+          pin: session.pin,
+          action: "questions",
+          hostToken: session.token,
+          questions: questionDrafts
+        });
+        questionBaseline = JSON.stringify(questionDrafts);
+        state.hostQuestions = questionDrafts.map(question => ({
+          q: question.q,
+          choices: [...question.choices],
+          correct: question.correct
+        }));
+        status.textContent = "Questions saved. They will be used for this and future games.";
+        updateQuestionSaveButton();
+      } catch (error) {
+        status.textContent = error.message;
+        updateQuestionSaveButton();
       }
     });
 

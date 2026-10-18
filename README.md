@@ -1,11 +1,11 @@
 # Duck Race Quiz
 
-The app has a fixed set of questions in `quiz.mjs`, one shared quiz room, and a Neon Postgres database for the PIN, game phase, players, answers, and scores. The host can reset the finished quiz for a new group. The race character artwork is served from `assets/race-character.png`.
+The app starts with the questions in `quiz.mjs`, one shared quiz room, and a Neon Postgres database for the PIN, game phase, questions, players, answers, and scores. The host can add, edit, or remove questions in the lobby; saved questions are kept for future games. The host can reset the finished quiz for a new group. The race character artwork is served from `assets/race-character.png`.
 
 ## Create the Neon database
 
 1. Create a Neon account and a free Postgres project.
-2. In the Neon SQL Editor, run the contents of `schema.sql`.
+2. In the Neon SQL Editor, run the contents of `schema.sql`. If you already created the database, run the updated script again to add the `questions` column; its statements are safe to rerun.
 3. Copy the connection string from Neon. Keep it private.
 
 Neon currently lists a $0 Free plan with usage/storage limits and says no credit card is required for that plan. It still requires an account; exceeding free usage or changing plans can have billing implications. Review the current [Neon pricing](https://neon.com/pricing) and do not upgrade if you want to stay on free.
@@ -31,7 +31,7 @@ After setting up the Neon schema, copy `.env.example` to `.env` and enter your o
 
 ## Game flow and limits
 
-The host starts the fixed quiz. Players have 30 seconds to answer, followed by a six-second race, correct-answer reveal, and 25-second break. Correct answers earn 100 points. The server checks deadlines and scores; the answer key is not sent until the reveal.
+The host starts the quiz. In the lobby, they can manage 1–50 questions, each with a prompt, four choices, and one correct answer. Changes are saved to Neon for future games and cannot be made after a game starts. Players have 30 seconds to answer, followed by a six-second race, correct-answer reveal, and 25-second break. Correct answers earn 100 points. The server checks deadlines and scores; the answer key is not sent to players until the reveal.
 
 Players can join while the quiz is in progress. A latecomer can answer the current question if its 30-second timer is still open; otherwise they join in time for the next question. Joining is closed after the quiz finishes, until the host resets it.
 
