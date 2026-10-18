@@ -1,8 +1,7 @@
 {
   "functions": {
-    "api/*.mjs": {
-      "maxDuration": 10,
-      "includeFiles": "{index.html,assets/**}"
+    "api/*.js": {
+      "maxDuration": 10
     }
   }
 }
