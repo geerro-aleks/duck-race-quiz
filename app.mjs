@@ -265,7 +265,6 @@ async function route(request) {
   const [currentGame] = await sql`SELECT * FROM quiz_games WHERE id = 'main' AND pin = ${pin}`;
 
   if (request.method === "POST" && parts[3] === "join") {
-    if (currentGame.phase !== "lobby") return fail("This quiz has already started.", 409);
     const name = typeof body.name === "string" ? body.name.trim() : "";
     if (!name || name.length > 20) return fail("Enter a nickname between 1 and 20 characters.", 400);
     const id = crypto.randomUUID();
@@ -276,17 +275,25 @@ async function route(request) {
         SELECT ${id}, ${pin}, ${hashToken(playerToken)}, ${name}, 0
         WHERE EXISTS (
           SELECT 1 FROM quiz_games
-          WHERE id = 'main' AND pin = ${pin} AND phase = 'lobby'
+          WHERE id = 'main' AND pin = ${pin}
+            AND phase IN ('lobby', 'question', 'race', 'reveal')
         )
           AND (SELECT COUNT(*) FROM quiz_players WHERE game_pin = ${pin}) < ${MAX_PLAYERS}
           RETURNING id
         `;
         if (!player) {
-          const [latestGame] = await sql`SELECT phase FROM quiz_games WHERE id = 'main' AND pin = ${pin}`;
-          if (latestGame?.phase !== "lobby") {
-            return fail("The quiz started before you joined. Ask the host to restart it.", 409);
+          const [latestGame] = await sql`
+            SELECT phase,
+              (SELECT COUNT(*)::int FROM quiz_players WHERE game_pin = ${pin}) AS player_count
+            FROM quiz_games WHERE id = 'main' AND pin = ${pin}
+          `;
+          if (latestGame?.phase === "finished") {
+            return fail("This quiz has finished. Ask the host to reset it before joining.", 409);
           }
-          return fail(`This game has reached its ${MAX_PLAYERS}-player limit.`, 409);
+          if (latestGame?.player_count >= MAX_PLAYERS) {
+            return fail(`This game has reached its ${MAX_PLAYERS}-player limit.`, 409);
+          }
+          return fail("The game could not accept your join request. Please try again.", 409);
         }
         return json({ playerToken, playerId: id }, 201);
     } catch (error) {
