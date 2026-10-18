@@ -80,17 +80,17 @@ async function advanceGame(sql, pin) {
   await sql`
     UPDATE quiz_games
     SET phase = 'race',
-        race_started_at = ${now},
-        race_ends_at = ${now + RACE_SECONDS * 1000}
+        race_started_at = ${now}::bigint,
+        race_ends_at = ${now + RACE_SECONDS * 1000}::bigint
     WHERE id = 'main' AND pin = ${pin}
-      AND phase = 'question' AND deadline <= ${now}
+      AND phase = 'question' AND deadline <= ${now}::bigint
   `;
 
   const [expiredRace] = await sql`
     SELECT question_index
     FROM quiz_games
     WHERE id = 'main' AND pin = ${pin}
-      AND phase = 'race' AND race_ends_at <= ${now}
+      AND phase = 'race' AND race_ends_at <= ${now}::bigint
   `;
   const correctIndex = expiredRace ? quiz[Number(expiredRace.question_index)].correct : null;
   await sql`
@@ -98,9 +98,10 @@ async function advanceGame(sql, pin) {
       UPDATE quiz_games
       SET phase = 'reveal',
           correct_index = ${correctIndex}::integer,
-          deadline = ${now + REVEAL_SECONDS * 1000}
+          deadline = ${now + REVEAL_SECONDS * 1000}::bigint
       WHERE id = 'main' AND pin = ${pin}
-        AND phase = 'race' AND race_ends_at <= ${now} AND ${correctIndex}::integer IS NOT NULL
+        AND phase = 'race' AND race_ends_at <= ${now}::bigint
+        AND ${correctIndex}::integer IS NOT NULL
       RETURNING pin, correct_index
     )
     UPDATE quiz_players AS players
@@ -125,12 +126,12 @@ async function advanceGame(sql, pin) {
           correct_index = NULL,
           deadline = CASE
             WHEN question_index + 1 >= ${quiz.length} THEN NULL
-            ELSE ${nextQuestionDeadline}
+            ELSE ${nextQuestionDeadline}::bigint
           END,
           race_started_at = NULL,
           race_ends_at = NULL
       WHERE id = 'main' AND pin = ${pin}
-        AND phase = 'reveal' AND deadline <= ${now}
+        AND phase = 'reveal' AND deadline <= ${now}::bigint
       RETURNING pin, phase
     )
     UPDATE quiz_players AS players
