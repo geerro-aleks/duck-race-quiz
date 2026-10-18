@@ -190,6 +190,7 @@ async function publicState(sql, game, role, token) {
     deadline: game.deadline === null ? null : Number(game.deadline),
     raceStartedAt: game.race_started_at === null ? null : Number(game.race_started_at),
     raceEndsAt: game.race_ends_at === null ? null : Number(game.race_ends_at),
+    raceWinnerIndex: game.phase === "race" && current ? current.correct : null,
     correctIndex: game.phase === "reveal" || game.phase === "finished" ? game.correct_index : null,
     answered: Boolean(ownPlayer?.answer_index !== null && ownPlayer?.answer_index !== undefined),
     answerCount,

@@ -190,7 +190,7 @@
         ctx.fillRect(550, y + 10, 10, 10);
       }
       const isRacing = state && state.phase === "race";
-      const duration = Math.max(1, state.raceEndsAt - state.raceStartedAt);
+      const duration = Math.max(1, state?.raceEndsAt - state?.raceStartedAt);
       const progress = isRacing ? Math.min(1, Math.max(0, (Date.now() - state.raceStartedAt) / duration)) : 0;
       for (let lane = 0; lane < 4; lane += 1) {
         const y = 40 + lane * 55;
@@ -200,9 +200,11 @@
         ctx.moveTo(0, y + 20);
         ctx.lineTo(canvas.width, y + 20);
         ctx.stroke();
-        const stagger = ((lane * 17) % 23) / 100;
-        const laneProgress = Math.max(0, Math.min(1, progress - stagger * progress));
-        let x = 20 + laneProgress * 465;
+        const speedFactor = lane === state.raceWinnerIndex
+          ? 1
+          : 0.62 + ((lane * 17) % 23) / 100;
+        const laneProgress = Math.max(0, Math.min(1, progress * speedFactor));
+        let x = 20 + laneProgress * 500;
         if ((state.phase === "reveal" || state.phase === "finished") && state.correctIndex !== null) {
           x = lane === state.correctIndex ? 520 : 420 + lane * 8;
         }
