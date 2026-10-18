@@ -97,10 +97,10 @@ async function advanceGame(sql, pin) {
     WITH transitioned AS (
       UPDATE quiz_games
       SET phase = 'reveal',
-          correct_index = ${correctIndex},
+          correct_index = ${correctIndex}::integer,
           deadline = ${now + REVEAL_SECONDS * 1000}
       WHERE id = 'main' AND pin = ${pin}
-        AND phase = 'race' AND race_ends_at <= ${now} AND ${correctIndex} IS NOT NULL
+        AND phase = 'race' AND race_ends_at <= ${now} AND ${correctIndex}::integer IS NOT NULL
       RETURNING pin, correct_index
     )
     UPDATE quiz_players AS players
