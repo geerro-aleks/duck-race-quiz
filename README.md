@@ -27,7 +27,7 @@ Vercel's Hobby plan is listed at $0/month but has usage limits and account eligi
 
 ## Run locally
 
-After setting up the Neon schema, copy `.env.example` to `.env` and enter your own secrets. The `.env` file is ignored by Git. Run `npm install`, then `npm start`; Node.js 20 or newer is required. With PowerShell, local environment variables can also be set for the current terminal using `$env:DATABASE_URL='your-connection-string'` and `$env:HOST_KEY='your-private-secret'` before running `node server.js`.
+After setting up the Neon schema, copy `.env.example` to `.env` and enter your own secrets. The `.env` file is ignored by Git. Run `npm install`, then `npm start`; Node.js 20 or newer is required. With PowerShell, local environment variables can also be set for the current terminal using `$env:DATABASE_URL='your-connection-string'` and `$env:HOST_KEY='your-private-secret'` before running `node server.cjs`.
 
 ## Game flow and limits
 
