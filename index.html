@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Duck Race Quiz</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    :root {
+      --race-navy: #0f172a;
+      --panel-navy: #1e293b;
+      --panel-border: #334155;
+      --water-blue: #00b8d4;
+      --button-blue: #28677f;
+      --button-hover: #347f97;
+      --sun-yellow: #fff000;
+      --orange: #f05a24;
+    }
+    body { background: var(--race-navy); }
+    .race-panel { background: var(--panel-navy); border-color: var(--panel-border); }
+    .race-title { color: var(--sun-yellow); -webkit-text-stroke: 1px var(--orange); text-shadow: 2px 2px 0 #722d18; }
+    .race-question { color: var(--sun-yellow); }
+    canvas { background: var(--water-blue); border-radius: 12px; }
+    canvas.race-track { border-color: #087e9b; }
+    .race-choice { background: var(--button-blue); border-color: #66a5b7; }
+    .race-choice:hover:not(:disabled) { background: var(--button-hover); }
+    .race-choice:focus-visible { outline: 3px solid var(--sun-yellow); outline-offset: 2px; }
+    .race-choice.correct { background: #167c34; border-color: var(--sun-yellow); }
+    .race-choice:disabled { cursor: default; opacity: .82; }
+  </style>
+</head>
+<body class="text-white min-h-screen flex flex-col items-center justify-center p-4">
+  <main class="max-w-2xl w-full space-y-4">
+    <header class="race-panel p-4 rounded-xl border flex justify-between items-center">
+      <h1 class="race-title text-xl font-bold">🦆 Duck Race Quiz</h1>
+      <span id="connection" class="text-sm font-semibold">Not connected</span>
+    </header>
+
+    <section id="entry" class="race-panel p-6 rounded-xl border space-y-5 text-center">
+      <h2 class="race-question text-xl font-semibold">Join the preset Duck Race Quiz</h2>
+      <p class="text-sm">After public deployment, players can join from any internet connection using the link and PIN.</p>
+      <div class="grid sm:grid-cols-2 gap-4">
+        <form id="host-form" class="race-panel border rounded-lg p-4 space-y-3">
+          <h3 class="font-bold">Host the preset quiz</h3>
+          <p class="text-sm">Enter the host key configured by the server to open the fixed quiz room.</p>
+          <input id="host-key-input" class="w-full p-3 rounded-lg text-slate-900" type="password" autocomplete="current-password" placeholder="Host key" aria-label="Host key" required>
+          <button class="race-choice w-full p-3 rounded-lg border font-bold">Open host controls</button>
+        </form>
+        <form id="join-form" class="race-panel border rounded-lg p-4 space-y-3">
+          <h3 class="font-bold">Join a game</h3>
+          <input id="pin-input" class="w-full p-3 rounded-lg text-slate-900" inputmode="numeric" maxlength="6" placeholder="6-digit game PIN" aria-label="Game PIN" required>
+          <input id="name-input" class="w-full p-3 rounded-lg text-slate-900" maxlength="20" placeholder="Your nickname" aria-label="Nickname" required>
+          <button class="race-choice w-full p-3 rounded-lg border font-bold">Join game</button>
+        </form>
+      </div>
+      <p id="entry-error" class="text-sm text-yellow-100" role="alert"></p>
+    </section>
+
+    <section id="game" class="hidden space-y-4 text-center">
+      <div class="race-panel p-4 rounded-xl border flex justify-between items-center">
+        <h2 class="font-bold">Game PIN: <span id="pin-label" class="race-question text-2xl"></span></h2>
+        <div class="text-sm font-semibold">
+          <span>Question: <span id="q-index">-</span></span> |
+          <span id="score-label" class="hidden">Score: <span id="score">0</span></span>
+          <span id="timer-label">Players: <span id="player-count">0</span></span>
+        </div>
+      </div>
+
+      <canvas id="raceTrack" width="600" height="260" class="race-track w-full border-4 shadow-2xl"></canvas>
+
+      <div class="race-panel p-6 rounded-xl border space-y-4">
+        <h2 id="phase-label" class="race-question text-xl font-bold"></h2>
+        <p id="question-text" class="text-lg font-medium"></p>
+        <div id="choices-grid" class="grid grid-cols-2 gap-3"></div>
+        <p id="status-text" class="text-sm" aria-live="polite"></p>
+        <div id="host-controls" class="hidden space-y-3">
+          <div>
+            <h3 class="font-bold">Players</h3>
+            <ul id="players-list" class="text-sm"></ul>
+          </div>
+          <button id="start-button" class="race-choice p-3 rounded-lg border font-bold">Start game</button>
+          <button id="reset-button" class="hidden race-choice p-3 rounded-lg border font-bold">Reset quiz for a new group</button>
+        </div>
+        <div id="leaderboard" class="hidden">
+          <h3 class="font-bold">Leaderboard</h3>
+          <ol id="leaderboard-list" class="text-left text-sm max-w-sm mx-auto"></ol>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const duckColors = ["#ff595e", "#ffca3a", "#8ac926", "#f472b6"];
+    const entry = document.getElementById("entry");
+    const gamePanel = document.getElementById("game");
+    const canvas = document.getElementById("raceTrack");
+    const ctx = canvas.getContext("2d");
+    const params = new URLSearchParams(location.search);
+    const raceCharacter = new Image();
+    let session = null;
+    let state = null;
+    let pollTimer = null;
+    let polling = false;
+    let submitted = false;
+    let lastPhase = null;
+
+    raceCharacter.onload = () => {
+      if (state) renderTrack();
+    };
+    raceCharacter.onerror = () => {
+      console.error("Could not load the race character image.");
+    };
+    raceCharacter.src = "/assets/race-character.png";
+
+    function showError(message) {
+      document.getElementById("entry-error").textContent = message;
+    }
+
+    async function post(path, payload) {
+      let response;
+      try {
+        response = await fetch(path, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+      } catch {
+        throw new Error("Cannot reach the game server. Start the server or check the public game URL, then try again.");
+      }
+
+      const responseText = await response.text();
+      let result;
+      try {
+        result = responseText ? JSON.parse(responseText) : {};
+      } catch {
+        throw new Error(`The game server returned an invalid response (HTTP ${response.status}). Check that the latest server version is running.`);
+      }
+      if (!responseText) {
+        throw new Error(`The game server returned an empty response (HTTP ${response.status}). Check that the latest server version is running.`);
+      }
+      if (!response.ok) throw new Error(result.error || "The request failed.");
+      return result;
+    }
+
+    function saveSession(nextSession) {
+      session = nextSession;
+      sessionStorage.setItem(`duck-race-${session.pin}`, JSON.stringify(session));
+      sessionStorage.setItem("duck-race-last-session", JSON.stringify(session));
+      connect();
+    }
+
+    function connect() {
+      if (pollTimer) clearInterval(pollTimer);
+      entry.classList.add("hidden");
+      gamePanel.classList.remove("hidden");
+      document.getElementById("pin-label").textContent = session.pin;
+      const refreshState = async () => {
+        if (polling) return;
+        polling = true;
+        const query = new URLSearchParams({ pin: session.pin, role: session.role, token: session.token });
+        try {
+          const response = await fetch(`/api/state?${query}`, { cache: "no-store" });
+          const result = await response.json();
+          if (!response.ok) throw new Error(result.error || "Could not load game state.");
+          document.getElementById("connection").textContent = "Connected";
+          update(result);
+        } catch (error) {
+          document.getElementById("connection").textContent = "Reconnecting…";
+          console.error("Could not refresh game state:", error);
+        } finally {
+          polling = false;
+        }
+      };
+      refreshState();
+      pollTimer = setInterval(refreshState, 3000);
+    }
+
+    function renderTrack() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = "#ffffff";
+      for (let y = 0; y < canvas.height; y += 20) {
+        ctx.fillRect(540, y, 10, 10);
+        ctx.fillRect(550, y + 10, 10, 10);
+      }
+      const isRacing = state && state.phase === "race";
+      const duration = Math.max(1, state.raceEndsAt - state.raceStartedAt);
+      const progress = isRacing ? Math.min(1, Math.max(0, (Date.now() - state.raceStartedAt) / duration)) : 0;
+      for (let lane = 0; lane < 4; lane += 1) {
+        const y = 40 + lane * 55;
+        ctx.strokeStyle = "rgba(255,255,255,0.25)";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(0, y + 20);
+        ctx.lineTo(canvas.width, y + 20);
+        ctx.stroke();
+        const stagger = ((lane * 17) % 23) / 100;
+        const laneProgress = Math.max(0, Math.min(1, progress - stagger * progress));
+        let x = 20 + laneProgress * 465;
+        if ((state.phase === "reveal" || state.phase === "finished") && state.correctIndex !== null) {
+          x = lane === state.correctIndex ? 520 : 420 + lane * 8;
+        }
+        const characterHeight = 50;
+        const characterWidth = characterHeight * raceCharacter.width / raceCharacter.height;
+        if (raceCharacter.complete && raceCharacter.naturalWidth > 0) {
+          ctx.drawImage(raceCharacter, x, y + 5 - characterHeight / 2, characterWidth, characterHeight);
+        }
+        ctx.fillStyle = duckColors[lane];
+        ctx.fillRect(5, y - 15, 12, 12);
+      }
+      if (isRacing && progress < 1) requestAnimationFrame(renderTrack);
+    }
+
+    function update(data) {
+      const roundChanged = !state
+        || state.phase !== data.phase
+        || state.questionNumber !== data.questionNumber;
+      state = data;
+      if (state.phase !== lastPhase) {
+        lastPhase = state.phase;
+        submitted = state.answered;
+      } else {
+        submitted = state.answered || submitted;
+      }
+      document.getElementById("q-index").textContent = state.question
+        ? `${state.questionNumber} / ${state.questionTotal}` : "-";
+      document.getElementById("score").textContent = state.score ?? "0";
+      document.getElementById("score-label").classList.toggle("hidden", session.role !== "player");
+      document.getElementById("timer-label").textContent = session.role === "host"
+        ? `Answers: ${state.answerCount} / ${state.playerCount}`
+        : `Players: ${state.playerCount}`;
+      document.getElementById("host-controls").classList.toggle("hidden",
+        session.role !== "host" || (state.phase !== "lobby" && state.phase !== "finished"));
+      document.getElementById("start-button").disabled = state.players.length === 0;
+      document.getElementById("start-button").classList.toggle("hidden", state.phase !== "lobby");
+      document.getElementById("reset-button").classList.toggle("hidden", state.phase !== "finished");
+      document.getElementById("leaderboard").classList.toggle("hidden", state.phase !== "reveal" && state.phase !== "finished");
+      renderLeaderboard();
+      renderRound(roundChanged);
+      renderTrack();
+    }
+
+    function renderLeaderboard() {
+      const list = document.getElementById("leaderboard-list");
+      list.replaceChildren();
+      for (const [index, player] of state.players.entries()) {
+        const item = document.createElement("li");
+        item.textContent = `${index + 1}. ${player.name} — ${player.score}`;
+        list.appendChild(item);
+      }
+      const playersList = document.getElementById("players-list");
+      playersList.replaceChildren();
+      for (const player of state.players) {
+        const item = document.createElement("li");
+        item.textContent = player.name;
+        playersList.appendChild(item);
+      }
+    }
+
+    function renderRound(roundChanged) {
+      const phaseLabel = document.getElementById("phase-label");
+      const questionText = document.getElementById("question-text");
+      const choices = document.getElementById("choices-grid");
+      const status = document.getElementById("status-text");
+      if (roundChanged) choices.replaceChildren();
+      document.getElementById("start-button").textContent = "Start game";
+      const hasQuestion = Boolean(state.question);
+      questionText.textContent = hasQuestion ? state.question.q : "";
+
+      if (state.phase === "lobby") {
+        phaseLabel.textContent = session.role === "host" ? "Waiting for players to join" : "Waiting for the host to start";
+        status.textContent = session.role === "host" ? "Share the public link and PIN with players." : "You’re in! Keep this page open.";
+        return;
+      }
+      if (state.phase === "question") {
+        phaseLabel.textContent = `Choose your answer · ${Math.max(0, Math.ceil((state.deadline - Date.now()) / 1000))}s`;
+        if (session.role === "player") {
+          if (roundChanged) {
+            state.question.choices.forEach((choice, index) => {
+              const button = document.createElement("button");
+              button.className = "race-choice text-left p-3 rounded-lg flex items-center gap-2 border transition";
+              button.disabled = submitted;
+              const marker = document.createElement("span");
+              marker.className = "w-4 h-4 rounded-full inline-block shrink-0";
+              marker.style.background = duckColors[index];
+              const label = document.createElement("span");
+              label.textContent = choice;
+              button.append(marker, label);
+              button.addEventListener("click", () => sendAnswer(index));
+              choices.appendChild(button);
+            });
+          } else {
+            choices.querySelectorAll("button").forEach(button => { button.disabled = submitted; });
+          }
+          status.textContent = submitted ? "Answer recorded. Good luck!" : "You can submit one answer before time runs out.";
+        } else {
+          status.textContent = `${state.answerCount} of ${state.playerCount} players have answered.`;
+        }
+        return;
+      }
+      if (state.phase === "race") {
+        phaseLabel.textContent = "The ducks are racing!";
+        status.textContent = "Correct answer and scores will be revealed at the finish.";
+        return;
+      }
+      if (state.phase === "reveal") {
+        phaseLabel.textContent = `Correct answer · Next question in ${Math.max(0, Math.ceil((state.deadline - Date.now()) / 1000))}s`;
+        const answer = state.question.choices[state.correctIndex];
+        status.textContent = `The answer is ${answer}.`;
+        if (roundChanged) {
+          state.question.choices.forEach((choice, index) => {
+            const button = document.createElement("div");
+            button.className = `race-choice text-left p-3 rounded-lg flex items-center gap-2 border ${index === state.correctIndex ? "correct" : ""}`;
+            const marker = document.createElement("span");
+            marker.className = "w-4 h-4 rounded-full inline-block shrink-0";
+            marker.style.background = duckColors[index];
+            const label = document.createElement("span");
+            label.textContent = choice;
+            button.append(marker, label);
+            choices.appendChild(button);
+          });
+        }
+        return;
+      }
+      phaseLabel.textContent = "Game over!";
+      status.textContent = `Final score: ${state.score ?? ""}`;
+    }
+
+    async function sendAnswer(choice) {
+      try {
+        submitted = true;
+        renderRound(false);
+        await post(`/api/games/${session.pin}/answer`, { playerToken: session.token, choice });
+      } catch (error) {
+        submitted = false;
+        renderRound(false);
+        document.getElementById("status-text").textContent = error.message;
+      }
+    }
+
+    document.getElementById("host-form").addEventListener("submit", async event => {
+      event.preventDefault();
+      try {
+        showError("");
+        const keyInput = document.getElementById("host-key-input");
+        const hostKey = keyInput.value;
+        const result = await post("/api/host/session", { hostKey });
+        keyInput.value = "";
+        saveSession({ pin: result.pin, role: "host", token: result.hostToken });
+      } catch (error) {
+        showError(error.message);
+      } finally {
+        document.getElementById("host-key-input").value = "";
+      }
+    });
+
+    document.getElementById("join-form").addEventListener("submit", async event => {
+      event.preventDefault();
+      try {
+        showError("");
+        const pin = document.getElementById("pin-input").value.trim();
+        const name = document.getElementById("name-input").value.trim();
+        const result = await post(`/api/games/${pin}/join`, { name });
+        saveSession({ pin, role: "player", token: result.playerToken, playerId: result.playerId });
+      } catch (error) {
+        showError(error.message);
+      }
+    });
+
+    document.getElementById("start-button").addEventListener("click", async () => {
+      const button = document.getElementById("start-button");
+      button.disabled = true;
+      try {
+        await post(`/api/games/${session.pin}/start`, { hostToken: session.token });
+      } catch (error) {
+        document.getElementById("status-text").textContent = error.message;
+        button.disabled = false;
+      }
+    });
+
+    document.getElementById("reset-button").addEventListener("click", async () => {
+      const button = document.getElementById("reset-button");
+      button.disabled = true;
+      try {
+        await post(`/api/games/${session.pin}/reset`, { hostToken: session.token });
+      } catch (error) {
+        document.getElementById("status-text").textContent = error.message;
+        button.disabled = false;
+      }
+    });
+
+    const savedPin = params.get("pin");
+    const savedSession = savedPin
+      ? sessionStorage.getItem(`duck-race-${savedPin}`)
+      : sessionStorage.getItem("duck-race-last-session");
+    if (savedSession) {
+      try {
+        session = JSON.parse(savedSession);
+        connect();
+      } catch {
+        sessionStorage.removeItem(`duck-race-${savedPin}`);
+      }
+    }
+    if (savedPin) document.getElementById("pin-input").value = savedPin;
+    setInterval(() => {
+      if (!state) return;
+      const phaseLabel = document.getElementById("phase-label");
+      if (state.phase === "question") {
+        phaseLabel.textContent = `Choose your answer · ${Math.max(0, Math.ceil((state.deadline - Date.now()) / 1000))}s`;
+      } else if (state.phase === "reveal") {
+        phaseLabel.textContent = `Correct answer · Next question in ${Math.max(0, Math.ceil((state.deadline - Date.now()) / 1000))}s`;
+      }
+    }, 250);
+  </script>
+</body>
+</html>
