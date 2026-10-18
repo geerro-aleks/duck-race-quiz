@@ -26,8 +26,20 @@
     .race-choice:focus-visible { outline: 3px solid var(--sun-yellow); outline-offset: 2px; }
     .race-choice.correct { background: var(--sun-yellow); border-color: var(--royal-blue); color: var(--ink); }
     .race-choice:disabled { cursor: default; opacity: .82; }
+    .loading-spinner {
+      width: 1rem;
+      height: 1rem;
+      border: 2px solid currentColor;
+      border-right-color: transparent;
+      border-radius: 50%;
+      animation: loading-spin .7s linear infinite;
+    }
+    @keyframes loading-spin { to { transform: rotate(360deg); } }
+    @media (prefers-reduced-motion: reduce) {
+      .loading-spinner { animation-duration: 1.8s; }
+    }
     input { background: #fffefa; border: 1px solid var(--panel-border); }
-    #entry-error { color: var(--royal-blue); }
+    #entry-error, .field-error { color: #b91c1c; }
   </style>
 </head>
 <body class="min-h-screen flex flex-col items-center justify-center p-4">
@@ -44,12 +56,14 @@
         <form id="host-form" class="race-panel border rounded-lg p-4 space-y-3">
           <h3 class="font-bold">Host the preset quiz</h3>
           <p class="text-sm">Enter the host key configured by the server to open the fixed quiz room.</p>
-          <input id="host-key-input" class="w-full p-3 rounded-lg text-slate-900" type="password" autocomplete="current-password" placeholder="Host key" aria-label="Host key" required>
+          <input id="host-key-input" class="w-full p-3 rounded-lg text-slate-900" type="password" autocomplete="current-password" placeholder="Host key" aria-label="Host key" aria-describedby="host-key-error" required>
+          <p id="host-key-error" class="field-error text-xs text-left" role="alert"></p>
           <button class="race-choice w-full p-3 rounded-lg border font-bold">Open host controls</button>
         </form>
         <form id="join-form" class="race-panel border rounded-lg p-4 space-y-3">
           <h3 class="font-bold">Join a game</h3>
-          <input id="pin-input" class="w-full p-3 rounded-lg text-slate-900" inputmode="numeric" maxlength="6" placeholder="6-digit game PIN" aria-label="Game PIN" required>
+          <input id="pin-input" class="w-full p-3 rounded-lg text-slate-900" inputmode="numeric" maxlength="6" placeholder="6-digit game PIN" aria-label="Game PIN" aria-describedby="pin-error" required>
+          <p id="pin-error" class="field-error text-xs text-left" role="alert"></p>
           <input id="name-input" class="w-full p-3 rounded-lg text-slate-900" maxlength="20" placeholder="Your nickname" aria-label="Nickname" required>
           <button class="race-choice w-full p-3 rounded-lg border font-bold">Join game</button>
         </form>
@@ -131,6 +145,34 @@
       document.getElementById("entry-error").textContent = message;
     }
 
+    function setFieldError(input, message) {
+      const error = document.getElementById(`${input.id.replace("-input", "")}-error`);
+      input.setAttribute("aria-invalid", "true");
+      error.textContent = message;
+    }
+
+    function clearFieldError(input) {
+      const error = document.getElementById(`${input.id.replace("-input", "")}-error`);
+      input.removeAttribute("aria-invalid");
+      error.textContent = "";
+    }
+
+    function setButtonLoading(button, label) {
+      if (!button.dataset.idleText) button.dataset.idleText = button.textContent.trim();
+      button.disabled = true;
+      const spinner = document.createElement("span");
+      spinner.className = "loading-spinner";
+      spinner.setAttribute("aria-hidden", "true");
+      button.replaceChildren(spinner, document.createTextNode(label));
+      button.setAttribute("aria-busy", "true");
+    }
+
+    function clearButtonLoading(button) {
+      if (button.dataset.idleText) button.textContent = button.dataset.idleText;
+      button.disabled = false;
+      button.removeAttribute("aria-busy");
+    }
+
     async function post(path, payload) {
       let requestPath = path;
       let requestPayload = payload;
@@ -160,7 +202,11 @@
       if (!responseText) {
         throw new Error(`The game server returned an empty response (HTTP ${response.status}). Check that the latest server version is running.`);
       }
-      if (!response.ok) throw new Error(result.error || "The request failed.");
+      if (!response.ok) {
+        const error = new Error(result.error || "The request failed.");
+        error.status = response.status;
+        throw error;
+      }
       return result;
     }
 
@@ -176,6 +222,8 @@
       entry.classList.add("hidden");
       gamePanel.classList.remove("hidden");
       document.getElementById("pin-label").textContent = session.pin;
+      document.getElementById("connection").textContent = "Connecting…";
+      document.getElementById("status-text").textContent = "Connecting to the game…";
       const refreshState = async () => {
         if (polling) return;
         polling = true;
@@ -454,7 +502,9 @@
       try {
         submitted = true;
         renderRound(false);
+        document.getElementById("status-text").textContent = "Submitting your answer…";
         await post(`/api/games/${session.pin}/answer`, { playerToken: session.token, choice });
+        document.getElementById("status-text").textContent = "Answer submitted. Good luck!";
       } catch (error) {
         submitted = false;
         renderRound(false);
@@ -464,52 +514,85 @@
 
     document.getElementById("host-form").addEventListener("submit", async event => {
       event.preventDefault();
+      const keyInput = document.getElementById("host-key-input");
+      clearFieldError(keyInput);
+      showError("");
+      const button = event.currentTarget.querySelector("button");
+      setButtonLoading(button, "Opening host controls…");
       try {
-        showError("");
-        const keyInput = document.getElementById("host-key-input");
         const hostKey = keyInput.value;
         const result = await post("/api/host/session", { hostKey });
         keyInput.value = "";
         saveSession({ pin: result.pin, role: "host", token: result.hostToken });
       } catch (error) {
+        if (error.status === 403) {
+          setFieldError(keyInput, "That host key is incorrect. Check it and try again.");
+        }
         showError(error.message);
       } finally {
+        clearButtonLoading(button);
         document.getElementById("host-key-input").value = "";
       }
     });
 
+    document.getElementById("host-key-input").addEventListener("input", event => {
+      clearFieldError(event.currentTarget);
+      showError("");
+    });
+
     document.getElementById("join-form").addEventListener("submit", async event => {
       event.preventDefault();
+      const pinInput = document.getElementById("pin-input");
+      clearFieldError(pinInput);
+      showError("");
+      const pin = pinInput.value.trim();
+      if (!/^\d{6}$/.test(pin)) {
+        const message = "Enter a valid six-digit game PIN.";
+        setFieldError(pinInput, message);
+        showError(message);
+        pinInput.focus();
+        return;
+      }
+      const button = event.currentTarget.querySelector("button");
+      setButtonLoading(button, "Joining game…");
       try {
-        showError("");
-        const pin = document.getElementById("pin-input").value.trim();
         const name = document.getElementById("name-input").value.trim();
         const result = await post(`/api/games/${pin}/join`, { name });
         saveSession({ pin, role: "player", token: result.playerToken, playerId: result.playerId });
       } catch (error) {
+        if (error.status === 404) {
+          setFieldError(pinInput, "No game was found with that PIN. Check the six digits and try again.");
+        }
         showError(error.message);
+      } finally {
+        clearButtonLoading(button);
       }
+    });
+
+    document.getElementById("pin-input").addEventListener("input", event => {
+      clearFieldError(event.currentTarget);
+      showError("");
     });
 
     document.getElementById("start-button").addEventListener("click", async () => {
       const button = document.getElementById("start-button");
-      button.disabled = true;
+      setButtonLoading(button, "Starting game…");
       try {
         await post(`/api/games/${session.pin}/start`, { hostToken: session.token });
       } catch (error) {
         document.getElementById("status-text").textContent = error.message;
-        button.disabled = false;
+        clearButtonLoading(button);
       }
     });
 
     document.getElementById("reset-button").addEventListener("click", async () => {
       const button = document.getElementById("reset-button");
-      button.disabled = true;
+      setButtonLoading(button, "Resetting quiz…");
       try {
         await post(`/api/games/${session.pin}/reset`, { hostToken: session.token });
       } catch (error) {
         document.getElementById("status-text").textContent = error.message;
-        button.disabled = false;
+        clearButtonLoading(button);
       }
     });
 
@@ -526,7 +609,7 @@
     document.getElementById("save-questions-button").addEventListener("click", async event => {
       const button = event.currentTarget;
       const status = document.getElementById("question-save-status");
-      button.disabled = true;
+      setButtonLoading(button, "Saving questions…");
       status.textContent = "Saving questions…";
       try {
         await post("/api/game", {
@@ -542,9 +625,11 @@
           correct: question.correct
         }));
         status.textContent = "Questions saved. They will be used for this and future games.";
+        clearButtonLoading(button);
         updateQuestionSaveButton();
       } catch (error) {
         status.textContent = error.message;
+        clearButtonLoading(button);
         updateQuestionSaveButton();
       }
     });
